@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Template for ECS Cluster, Task Definitions, and Service"
+
+Parameters:
+  environment:
+    Type: String
+    Description: "The environment where the ECS service will be deployed (e.g., qa, staging, prod)"
+  product:
+    Type: String
+    Description: "The environment or application name"
+  service:
+    Type: String
+    Description: "The ECS service name"
+  imageUrl:
+    Type: String
+    Description: "The URL of the ECR image to use for the ECS service"
+    Default: "N/A"
+Resources:
+  testEcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${environment}-${product}-${service}-cluster"
+  testTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${environment}-${product}-${service}-taskdef"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: "arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole"
+      ContainerDefinitions:
+        - Name: !Sub "${environment}-${product}-${service}-container"
+          Image: !Ref imageUrl
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+  testService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref testEcsCluster
+      DesiredCount: 2
+      LaunchType: FARGATE
+      TaskDefinition: !Ref testTaskDefinition
+      ServiceName: !Sub "${environment}-${product}-${service}-ecs-service"
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !ImportValue testSubnet1Id
+            - !ImportValue testSubnet2Id
+          SecurityGroups:
+            - !ImportValue testSecurityGroupId
+
+Outputs:
+  ecsServiceName:
+    Description: ECS Service Name
+    Value: !Ref testService
+  ecsClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref testEcsCluster
+  taskDefinitionFamily:
+    Description: ECS Task Definition Family
+    Value: !Ref testTaskDefinition

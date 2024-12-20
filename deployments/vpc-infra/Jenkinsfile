@@ -1,0 +1,54 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_SESSION_TOKEN = credentials('aws-session-token')
+    }
+    
+    parameters {
+        string(name: 'AwsRegion', description: 'Enter your AWS region')
+        string(name: 'environment', description: 'Enter the environment')
+        string(name: 'product', description: 'Enter the product name')
+        string(name: 'service', description: 'Enter the service name')
+    }
+    
+    stages {
+        stage('Creating VPC') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws_creds',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh """
+                        aws cloudformation deploy \
+                        --stack-name ${params.environment}-${params.product}-${params.service}-vpc-stack \
+                        --template-file ./Training/Anmol/aws/frontend/vpc.yml \
+                        --parameter-overrides \
+                            environment=${params.environment} \
+                            product=${params.product} \
+                            service=${params.service} \
+                        --region ${params.AwsRegion}
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Build succeeded!'
+        }
+        failure {
+            echo 'Build failed. Please check the logs for details.'
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
+
+
+
+

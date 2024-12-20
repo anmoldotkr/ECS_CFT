@@ -1,0 +1,116 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_SESSION_TOKEN = credentials('aws-session-token')
+    }
+    
+    parameters {
+        string(name: 'AwsRegion', description: 'Enter your AWS region')
+        string(name: 'environment', description: 'Enter the environment')
+        string(name: 'product', description: 'Enter the product name')
+        string(name: 'service', description: 'Enter the service name')
+    }
+    
+    stages {
+        stage('Create ECR Repository') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws_creds',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    sh """
+                        aws cloudformation deploy \
+                        --stack-name ${params.environment}-${params.product}-${params.service}-ecr-repo \
+                        --template-file ./Training/Anmol/aws/frontend/serviceEcr.yml \
+                        --region ${params.AwsRegion} \
+                        --parameter-overrides \
+                            environment=${params.environment} \
+                            product=${params.product} \
+                            service=${params.service}
+                    """
+                }
+            }
+        }
+        
+        stage('Fetch ECR Image URI') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws_creds',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    script {
+                        env.imageUrl = sh(script: """
+                            aws ecr describe-repositories \
+                            --repository-names ${params.environment}-${params.product}-${params.service} \
+                            --region ${params.AwsRegion} \
+                            --query 'repositories[0].repositoryUri' \
+                            --output text
+                        """, returnStdout: true).trim() + ":latest"
+
+                        if (!env.imageUrl || env.imageUrl == "None") {
+                            error "Failed to fetch image URI for repository: ${params.environment}-${params.product}-${params.service}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build and Push Docker Image') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws_creds',
+                    accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                    secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                    script {
+                        // Login to ECR
+                        sh "aws ecr get-login-password --region ${params.AwsRegion} | docker login --username AWS --password-stdin ${env.imageUrl.split(':')[0]}"
+
+                        // Build the Docker image using the correct Dockerfile path
+                        sh "docker build -t ${params.service} -f ./Training/Anmol/Dockerfile ."
+
+                        // Tag the image
+                        sh "docker tag ${params.service}:latest ${env.imageUrl}"
+
+                        // Push the image to ECR
+                        sh "docker push ${env.imageUrl}"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy ECS Fargate Service') {
+            steps {
+                sh """
+                    aws cloudformation deploy \
+                    --stack-name ${params.environment}-${params.product}-${params.service}-fargate-stack \
+                    --template-file ./Training/Anmol/aws/frontend/ecs-fargate.yml \
+                    --region ${params.AwsRegion} \
+                    --parameter-overrides \
+                        environment=${params.environment} \
+                        product=${params.product} \
+                        service=${params.service} \
+                        imageUrl=${env.imageUrl}
+                """
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Build and deployment succeeded!'
+        }
+        failure {
+            echo 'Build or deployment failed. Please check the logs for details.'
+        }
+        always {
+            cleanWs()
+        }
+    }
+}

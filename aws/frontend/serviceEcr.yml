@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create an ECR repository and export necessary attributes"
+Parameters:
+  environment:
+    Type: String
+    Description: "The environment where the ECR will be deployed (e.g., dev, staging, prod)"
+  product:
+    Type: String
+    Description: "The product name associated with the ECR"
+  service:
+    Type: String
+    Description: "The service name associated with the ECR"
+Resources:
+  # ECR Repository
+  serviceEcr:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${environment}-${product}-${service}"
+      ImageScanningConfiguration:
+        scanOnPush: true
+      ImageTagMutability: MUTABLE
+Outputs:
+  ECRRepositoryUri:
+    Description: "URI of the created ECR repository"
+    Value: !GetAtt serviceEcr.RepositoryUri
+    Export:
+      Name: !Sub "${environment}-${product}-${service}-RepositoryUri"
+
+  ECRRepositoryName:
+    Description: "Name of the created ECR repository"
+    Value: !Ref serviceEcr
+    Export:
+      Name: !Sub "${environment}-${product}-${service}-RepositoryName"
+
+  ECRRepositoryArn:
+    Description: "ARN of the created ECR repository"
+    Value: !GetAtt serviceEcr.Arn
+    Export:
+      Name: !Sub "${environment}-${product}-${service}-RepositoryArn"

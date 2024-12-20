@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Template to create VPC, Subnets, Security Groups, Route Table Associations, and export them"
+Parameters:
+  service:
+    Type: String
+    Description: "The environment for the resources (e.g., dev, test, prod)"
+  environment:
+    Type: String
+    Description: "The product name associated with the resources"
+  product:
+    Type: String
+    Description: "The service name associated with the resources"
+Resources:
+  testVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}-VPC"
+  testSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref testVpc
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}-Subnet1"
+  testSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref testVpc
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}-Subnet2"
+  testInternetGateway:
+    Type: AWS::EC2::InternetGateway
+  attachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref testVpc
+      InternetGatewayId: !Ref testInternetGateway
+  testRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref testVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}-RouteTable"
+  testRoute:
+    Type: AWS::EC2::Route
+    DependsOn: testInternetGateway
+    Properties:
+      RouteTableId: !Ref testRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref testInternetGateway
+  subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref testSubnet1
+      RouteTableId: !Ref testRouteTable
+  subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref testSubnet2
+      RouteTableId: !Ref testRouteTable
+  testSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow all inbound and outbound traffic
+      VpcId: !Ref testVpc
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0 
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0 
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}-SecurityGroup"
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref testVpc
+    Export:
+      Name: testVpcId
+  Subnet1Id:
+    Description: Subnet 1 ID
+    Value: !Ref testSubnet1
+    Export:
+      Name: testSubnet1Id
+  Subnet2Id:
+    Description: Subnet 2 ID
+    Value: !Ref testSubnet2
+    Export:
+      Name: testSubnet2Id
+  SecurityGroupId:
+    Description: Security Group ID
+    Value: !Ref testSecurityGroup
+    Export:
+      Name: testSecurityGroupId
